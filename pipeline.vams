@@ -1,0 +1,85 @@
+//SampHold.vams
+//Models Fixed Gain and Offset errors + Gaussian Noise@Sample rate
+real posval, negval;
+//Analog Values in Discrete time events
+wreal res_p=posval;
+wreal res_m=negval;
+//initialize the variables in Initial Block
+always @(negedge clk) begin
+  sampval = V(ain_p, ain_n);
+  vn = vnoise *($dist_normal(seedn, 0, 1000)%6000)/1000.0;
+  posval = V(cmref) + gain *(sampval+vos+vn)/2;
+  if (posval > vhi) posval = vhi;
+  else if (posval < vlo) posval=vlo;
+  negval = V(cmref) - gain*(sampval+vos+vn)/2;
+  if(negval >vhi) negval = vhi;
+  else if(negval < vlo) negval = vlo;
+end
+always @(posedge clk) begin
+  sampval = 0;
+  posval = V(cmref);
+  negval = V(cmref）；
+end
+
+//PLADC_1r5b_stage.vams
+//1.5b pipeline stage
+real res_pl, res_mi;
+wreal res_p, res_m;
+wreal ain_p, ain_n;
+assign res_p=res_p1;
+assign res_m=res_mi;
+always @(posedge clk) begin //smaple the input
+  #(td/1n) code=2'bx;       //set to unknown until other edge of clock
+  res_pl=V(cmref);
+  res_mi=V(cmref);
+end
+always @(negedge clk) begin //evaluate and drive the outputs
+  vn=vnoise*($dist_normal(seedn,0,1000)%6000)/1000.0;
+  valin=ain_p-ain_n;
+  refin=V(adcrefp, adcrefn);
+  #(td/1n) code=1+((valin+vospcomp)>refin)-((valin+vosncom)<-refin);
+  #(td/1n) resout=(valin+vosamp+vn)*Cgain+(1.0-code)*V(dacrefp,dacrefn);
+  res_p1=V(cmref)+0.5*resout;
+  res_mi=V(cmref)-0.5*resout;
+end
+
+//PLADC_flash.vams
+wreal ain_p, ain_n;
+logic clk;
+output overflow, underfolw;
+reg overflow, underflow;
+output [1:0] code;
+reg [1:0] code;
+always @(posedge clk) begin   //samle the input
+  //valin=ain_p-ain_n;
+  //refin=V(adcrefp, adcrefn);
+  #(td/1n) code=2'bx; //set to unknown
+end
+always @(negedge clk) begin   //evaluate and drive the outputs
+  valin=ain_p-ain_n;
+  refin=V(adcrefp, adcrefn);
+  #(td/1n) code=1+(valin>0)+(valin>refin)-(valin<-refin);
+  overflow=valin>V(dacrefp, dacrefn);
+  underflow=valin<-V(dacrefp, dacrefn);
+end
+
+//PLADC_DigCorr4.vams
+always @(posedge PHIodd) begin
+  #Td //just the even bits
+  st2a=st2;
+  st4a=st4;
+  code=sum;
+  overflow=over||(OF && St1c[1] && St2c[1] && St3b[1] && St4b[1] && St5a[1] && St5a[0]);
+  underflow=UF && !St1c && !St2c && !St3b && !St4b && !St5a;
+end
+always @(posedge PHIeven) begin
+  #Td // need to do this in order,
+      // or use non-blocking with the same delay?
+  St1c=St1b; St1b=St1a; St1a=St1; //1
+  St2c=St2b; St2b=St2a;           //2
+  St3b=St3a; St3a=St3;            //3
+  St4b=St4a; St5a=St5;            //4&5
+  sum=st5a+(St4b<<1)+(St3b<<2)+(St2c<<3)+(St1c<<4);
+  // these are clocked and EVALUATED on other Edge
+  over=Sum[6]; OF=OFlast; UF=UFlast;
+end
