@@ -83,3 +83,43 @@ always @(posedge PHIeven) begin
   // these are clocked and EVALUATED on other Edge
   over=Sum[6]; OF=OFlast; UF=UFlast;
 end
+
+
+//Verilg-AMS code for generating smapled 1/f noise and white noise
+
+module fwnoise(clk,out);
+input clk;
+wreal out;
+real high, low, tlow, interval, fout;
+integer numPoles, seed, i, j, number;
+reg[11:0] poles, gain, states;
+parameter real wnStdDev=1e-6 from [0:inf);
+
+initial begin
+  seed=32;
+  high=1;
+  low=o.000001;
+  number=12;
+  tlow=$log(low);
+  interval=($log(high)-tlow)/(number-1);
+  for(i=0;i<number;i=i+1) begin
+    poles[i]=$atan($pow(10.0, tlow+interval*i));
+    gain[i]=$sqrt(poles[i]);
+    poles[i]=1.0/(1.0+poles[i]);
+    //initalize the states
+    state[i]=0.0;
+  end
+end
+
+always @(posedge(clk)) begin
+  out=0.0;
+  //Calculate the 1/f noise sample
+  for(j=0; j<number; j=j+1) begin
+    fout=state[j]+$rdist_noraml(see, o.o, gain[j]);
+    state[j]=fout*poles[j];
+    out=out+fout;
+  end
+  // add in white noise
+  out=out+$rdist_normal(seed, 0.0, wnStdDev);
+end
+endmodule
